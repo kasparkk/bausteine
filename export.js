@@ -9,8 +9,9 @@
    Warum selbst gebaut: Eine .xlsx ist nur ein ZIP mit ein paar XML-Dateien.
    Fertige Bibliotheken dafuer sind mehrere hundert Kilobyte gross; die App
    soll im Wald aber schnell und offline starten. Hier wird deshalb genau das
-   Minimum geschrieben, das Excel braucht - eine Tabelle, Text und Zahlen,
-   keine Formatierung.
+   Minimum geschrieben, das Excel braucht - ein oder mehrere Blaetter mit
+   Text, Zahlen und Wahrheitswerten, keine Formatierung. Datumsangaben werden
+   als ISO-Text in UTC geschrieben (kein Excel-Datum).
 
    Der ZIP-Teil legt die Dateien unkomprimiert ab ("store"). Das ist erlaubt,
    spart eine Kompressionsroutine und faellt bei diesen Datenmengen nicht auf. */
@@ -25,12 +26,17 @@ const TYP_OFFICE = "application/vnd.openxmlformats-officedocument.spreadsheetml"
 
 const XML_ZEICHEN = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" };
 
+// In XML verbotene Zeichen: Steuerzeichen und die "Nicht-Zeichen" U+FFFE/FFFF.
+const XML_VERBOTEN = /[\x00-\x08\x0B\x0C\x0E-\x1F\uFFFE\uFFFF]/g;
+const ohneVerbotene = (text) => String(text).replace(XML_VERBOTEN, "");
+
 function xmlText(wert) {
-  return String(wert)
-    .replace(/[&<>"']/g, (z) => XML_ZEICHEN[z])
-    // Steuerzeichen sind in XML nicht erlaubt und wuerden Excel stoeren.
-    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "");
+  return ohneVerbotene(wert).replace(/[&<>"']/g, (z) => XML_ZEICHEN[z]);
 }
+
+/* Datum als Text; ein ungueltiges Datum (z. B. new Date(undefined) aus
+   einem leeren Feld) wird leer statt die ganze Ausgabe abzubrechen. */
+const datumText = (d) => (Number.isNaN(d.getTime()) ? "" : d.toISOString());
 
 // Spaltennummer -> Buchstaben (1 -> A, 27 -> AA)
 function spaltenName(nr) {
@@ -46,7 +52,7 @@ function spaltenName(nr) {
 function blattXml(zeilen) {
   const inhalt = zeilen
     .map((zeile, zi) => {
-      const zellen = zeile
+      const zellen = (Array.isArray(zeile) ? zeile : [])
         .map((wert, si) => {
           const pos = `${spaltenName(si + 1)}${zi + 1}`;
           if (wert === null || wert === undefined || wert === "") return "";
@@ -59,7 +65,7 @@ function blattXml(zeilen) {
             return `<c r="${pos}" t="b"><v>${wert ? 1 : 0}</v></c>`;
           }
           // Excel fasst hoechstens 32767 Zeichen je Zelle (vor dem Maskieren kuerzen).
-          const roh = wert instanceof Date ? wert.toISOString() : String(wert);
+          const roh = wert instanceof Date ? datumText(wert) : String(wert);
           const text = xmlText(roh.slice(0, 32767));
           // xml:space, sonst schneidet Excel Leerzeichen am Rand ab.
           return `<c r="${pos}" t="inlineStr"><is><t xml:space="preserve">${text}</t></is></c>`;
@@ -175,20 +181,22 @@ export function baueXlsxMehrblatt(blaetter) {
   const gueltig = blaetter.filter((b) => b.zeilen?.length);
   const teile = gueltig.length ? gueltig : [{ name: "Tabelle1", zeilen: [[""]] }];
 
-  /* Excel verweigert die Datei bei doppelten oder zu langen Blattnamen und
-     bei den Zeichen : \ / ? * [ ] - deshalb hier vorsorglich saeubern. */
-  const vergeben = new Set();
+  /* Excel verweigert die Datei bei doppelten, leeren oder zu langen
+     Blattnamen, bei den Zeichen : \ / ? * [ ], bei einem Apostroph am Rand
+     und beim reservierten Namen "History" - deshalb hier vorsorglich
+     saeubern. Doppelte bekommen eine Nummer: a, a 2, a 3. */
+  const vergeben = new Set(["history"]);
   const namen = teile.map((b, i) => {
-    let name = String(b.name ?? `Tabelle${i + 1}`)
-      .replace(/[:\\/?*\[\]]/g, " ")
-      .slice(0, 31)
-      .trim()
-      // Ein Apostroph am Anfang oder Ende ist in Excel nicht erlaubt.
-      .replace(/^'+|'+$/g, "") || `Tabelle${i + 1}`;
-    let zaehler = 2;
-    while (vergeben.has(name.toLowerCase())) {
-      const anhang = ` ${zaehler++}`;
-      name = name.slice(0, 31 - anhang.length) + anhang;
+    const basis =
+      ohneVerbotene(b.name ?? "")
+        .replace(/[:\\/?*\[\]]/g, " ")
+        .slice(0, 31)
+        .trim()
+        .replace(/^'+|'+$/g, "") || `Tabelle${i + 1}`;
+    let name = basis;
+    for (let zaehler = 2; vergeben.has(name.toLowerCase()); zaehler++) {
+      const anhang = ` ${zaehler}`;
+      name = basis.slice(0, 31 - anhang.length) + anhang;
     }
     vergeben.add(name.toLowerCase());
     return name;
@@ -237,11 +245,14 @@ export function baueXlsxMehrblatt(blaetter) {
 
 /* CSV fuer den deutschen Excel-Import: Semikolon als Trenner, Komma als
    Dezimalzeichen, BOM voran, damit Umlaute nicht zerfallen.
+   Bewusst nicht gegen "Formeln" in Textfeldern geschuetzt (Text, der mit
+   = + - @ beginnt): die Daten stammen vom eigenen Team, und ein vorgesetztes
+   Apostroph wuerde in Excel sichtbar und Werte wie "-5 cm" verfaelschen.
    zeilen = Array von Arrays; liefert Text. */
 export function baueCsv(zeilen) {
   const feld = (wert) => {
     if (typeof wert === "number") return Number.isFinite(wert) ? String(wert).replace(".", ",") : "";
-    const text = wert instanceof Date ? wert.toISOString() : String(wert ?? "");
+    const text = wert instanceof Date ? datumText(wert) : String(wert ?? "");
     return /[;"\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
   };
   return "\uFEFF" + zeilen.map((z) => z.map(feld).join(";")).join("\r\n");
@@ -249,6 +260,10 @@ export function baueCsv(zeilen) {
 
 /* Eine fertige Datei loswerden: erst ueber das Teilen-Menue des Handys,
    sonst als Download.
+
+   Hinweis: Chrome auf Android teilt nur bestimmte Dateitypen (u. a. CSV mit
+   type "text/csv", PDF, Text, Bilder) - eine .xlsx geht dort immer den Weg
+   ueber den Download. Das ist so gewollt und funktioniert.
 
    Liefert "geteilt", "gespeichert" oder "abgebrochen" (Nutzer hat das
    Teilen-Menue geschlossen - kein Fehler). Scheitert auch der Download,

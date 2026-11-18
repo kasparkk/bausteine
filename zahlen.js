@@ -10,18 +10,23 @@
 
 export const FEHLT = "–";
 
-/* Eingabe als Zahl; null, undefined und "" gelten als "kein Wert" (NaN).
-   Number("") waere sonst 0 - eine erfundene Null, bei Koordinaten sogar ein
-   Punkt am Aequator. */
-export const alsZahl = (wert) => (wert == null || wert === "" ? NaN : Number(wert));
+/* Eingabe als Zahl. Nur Zahlen und nicht-leerer Text zaehlen; alles andere
+   (null, undefined, "", "  ", false, [] ...) ist "kein Wert" (NaN).
+   Number("") oder Number(false) waere sonst 0 - eine erfundene Null, bei
+   Koordinaten sogar ein Punkt am Aequator. */
+export const alsZahl = (wert) =>
+  typeof wert === "number" ? wert
+  : typeof wert === "string" && wert.trim() !== "" ? Number(wert)
+  : NaN;
 
 export const nk = (wert, stellen = 1, ort = "de-DE") => {
-  const zahl = alsZahl(wert);
+  let zahl = alsZahl(wert);
   if (!Number.isFinite(zahl)) return FEHLT;
-  const text = zahl.toLocaleString(ort, {
+  // Was auf null gerundet wird, als echte Null formatieren - sonst ergibt
+  // -0,04 "-0,0" (in manchen Sprachen mit typografischem Minus).
+  if (Number(zahl.toFixed(stellen)) === 0) zahl = 0;
+  return zahl.toLocaleString(ort, {
     minimumFractionDigits: stellen,
     maximumFractionDigits: stellen,
   });
-  // -0,04 auf eine Stelle ergaebe sonst "-0,0"
-  return /^-[0.,\s]*$/.test(text) ? text.slice(1) : text;
 };

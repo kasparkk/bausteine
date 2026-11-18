@@ -89,3 +89,58 @@ test("CSV: Zeilenumbruch, NaN und Datum", () => {
   const csv = baueCsv([["a\rb", NaN, new Date("2026-01-02T00:00:00Z")]]);
   assert.equal(csv.slice(1), '"a\rb";;2026-01-02T00:00:00.000Z');
 });
+
+const wohlgeformt = (pfad, teil) => {
+  // unzip liest [ ] als Muster, deshalb maskieren
+  const xml = execFileSync("unzip", ["-p", pfad, teil.replace(/[[\]]/g, "\\$&")]);
+  execFileSync("xmllint", ["--noout", "-"], { input: xml }); // wirft bei kaputtem XML
+};
+
+test("alle XML-Teile sind wohlgeformt, auch mit verbotenen Zeichen", async () => {
+  const pfad = await alsDatei(
+    baueXlsxMehrblatt([
+      { name: "\u0001", zeilen: [["a\uFFFEb\uFFFF", "\u0001x", "<&>"]] },
+      { name: "\u0002", zeilen: [[1]] },
+      { name: "History", zeilen: [[2]] },
+    ]),
+  );
+  const liste = execFileSync("unzip", ["-Z1", pfad]).toString().trim().split("\n");
+  for (const teil of liste) wohlgeformt(pfad, teil);
+  const wb = execFileSync("unzip", ["-p", pfad, "xl/workbook.xml"]).toString();
+  assert.ok(wb.includes('name="Tabelle1"') && wb.includes('name="Tabelle2"'), "leere Namen bekommen Ersatz");
+  assert.ok(wb.includes('name="History 2"'), "reservierter Name");
+});
+
+test("gleiche Blattnamen werden durchnummeriert", async () => {
+  const pfad = await alsDatei(baueXlsxMehrblatt(["a", "a", "a", "A 2"].map((name) => ({ name, zeilen: [[1]] }))));
+  const wb = execFileSync("unzip", ["-p", pfad, "xl/workbook.xml"]).toString();
+  const namen = [...wb.matchAll(/name="([^"]*)"/g)].map((m) => m[1]);
+  assert.deepEqual(namen, ["a", "a 2", "a 3", "A 2 2"]);
+});
+
+test("ungueltiges Datum und fehlende Zeile brechen nichts ab", async () => {
+  assert.equal(baueCsv([[new Date("x"), 1]]).slice(1), ";1");
+  const pfad = await alsDatei(baueXlsx([[new Date("x")], undefined, ["ok"]]));
+  wohlgeformt(pfad, "xl/worksheets/sheet1.xml");
+});
+
+test("weitergeben: anderer Fehler beim Teilen -> Download", async () => {
+  const vorher = globalThis.navigator;
+  const geklickt = [];
+  globalThis.document = {
+    createElement: () => ({ click() { geklickt.push([this.download, this.href]); } }),
+    body: { appendChild() {}, removeChild() {} },
+  };
+  URL.createObjectURL = () => "blob:y";
+  URL.revokeObjectURL = () => {};
+  Object.defineProperty(globalThis, "navigator", {
+    value: { canShare: () => true, share: async () => { const e = new Error("x"); e.name = "NotAllowedError"; throw e; } },
+    configurable: true,
+  });
+  try {
+    assert.equal(await weitergeben(new Blob(["x"]), "b.xlsx", "T"), "gespeichert");
+    assert.deepEqual(geklickt, [["b.xlsx", "blob:y"]]);
+  } finally {
+    Object.defineProperty(globalThis, "navigator", { value: vorher, configurable: true });
+  }
+});

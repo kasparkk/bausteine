@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { nk } from "../zahlen.js";
+import { nk, alsZahl } from "../zahlen.js";
 
 test("deutsches Format mit fester Stellenzahl", () => {
   assert.equal(nk(12.5), "12,5");
@@ -23,4 +23,17 @@ test("kein Minus vor einer gerundeten Null", () => {
   assert.equal(nk(-0, 0), "0");
   assert.equal(nk(-0.06, 1), "-0,1");
   assert.equal(nk(-0.004, 2, "en-GB"), "0.00");
+});
+
+test("alsZahl: nur Zahlen und nicht-leerer Text", () => {
+  for (const w of [null, undefined, "", "  ", false, true, [], {}]) assert.ok(Number.isNaN(alsZahl(w)), String(w));
+  assert.equal(alsZahl(" 12.5 "), 12.5);
+  assert.equal(alsZahl(0), 0);
+  assert.equal(nk(" "), "–");
+});
+
+test("gerundete Null ohne Minus auch mit typografischem Minus", () => {
+  assert.equal(nk(-0.04, 1, "sv-SE"), "0,0");
+  assert.equal(nk(-0.04, 1, "fi-FI"), "0,0");
+  assert.equal(nk(-0.06, 1, "sv-SE"), "\u22120,1");
 });

@@ -21,10 +21,10 @@
    Mercator-Abbildung (Snyder, Map Projections - A Working Manual) auf dem
    GRS80-Ellipsoid.
 
-   Genauigkeit gegen pyproj (geprueft 47-55 Grad Nord): innerhalb der Zone 33
-   (12-18 Grad Ost) unter 1 cm, bei 6 bzw. 24 Grad Ost unter 5 cm, an den
-   Raendern des zugelassenen Bereichs (3 bzw. 27 Grad Ost) bis 40 cm.
-   Die Umrechnung gilt nur fuer die Nordhalbkugel. */
+   Genauigkeit gegen pyproj: in Brandenburg und ueberall in 47-55 Grad Nord,
+   12-18 Grad Ost unter 1 cm (meist nur die Rundung auf cm); bei 47-55 Grad
+   Nord am Rand des Bereichs (3 bzw. 27 Grad Ost) bis 40 cm; nahe dem
+   Aequator am Rand bis 1,5 m. Nur Nordhalbkugel. */
 
 import { alsZahl } from "./zahlen.js";
 
@@ -58,7 +58,7 @@ function meridianbogen(phi) {
    irrefuehrender als gar keine. */
 export function nachUtm33(breiteGrad, laengeGrad) {
   if (!Number.isFinite(breiteGrad) || !Number.isFinite(laengeGrad)) return null;
-  if (breiteGrad < -80 || breiteGrad > 84) return null;
+  if (breiteGrad < 0 || breiteGrad > 84) return null;
   if (laengeGrad < 3 || laengeGrad > 27) return null;
   const { x, y } = vorwaerts(breiteGrad, laengeGrad);
   return { x: aufCm(x), y: aufCm(y) };
@@ -105,8 +105,10 @@ function vorwaerts(breiteGrad, laengeGrad) {
 
    Statt einer eigenen Reihe fuer den Rueckweg wird der Hinweg umgekehrt:
    grob schaetzen, dann Breite und Laenge so lange verschieben (Newton), bis
-   der Hinweg x und y trifft. Nach vier bis fuenf Schritten auf Bruchteile
-   eines Millimeters genau, im ganzen Bereich. */
+   der Hinweg x und y trifft; nach hoechstens drei Schritten auf Bruchteile
+   eines Millimeters. Landet das Ergebnis ausserhalb des Bereichs von
+   nachUtm33 (z. B. Rechtswert mit einer Ziffer zu viel) oder trifft es
+   nicht, kommt null - lieber kein Punkt als ein Punkt in Weissrussland. */
 export function ausUtm33(x, y) {
   if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
   // Spanne passend zu nachUtm33 (3-27 Grad Ost ergeben am Aequator x von
@@ -115,13 +117,15 @@ export function ausUtm33(x, y) {
   if (x < -900000 || x > 1900000 || y < 0 || y > 9400000) return null;
 
   let breite = y / 111132; // Meter je Breitengrad
+  let rest = Infinity;
   let laenge = 15 + (x - FE) / (111320 * Math.cos(bogen(breite)));
   const h = 1e-6;
   for (let schritt = 0; schritt < 10; schritt++) {
     const p = vorwaerts(breite, laenge);
     const dx = p.x - x;
     const dy = p.y - y;
-    if (Math.hypot(dx, dy) < 1e-4) break;
+    rest = Math.hypot(dx, dy);
+    if (rest < 1e-4) break;
     const pb = vorwaerts(breite + h, laenge);
     const pl = vorwaerts(breite, laenge + h);
     const a11 = (pb.x - p.x) / h, a12 = (pl.x - p.x) / h;
@@ -130,6 +134,10 @@ export function ausUtm33(x, y) {
     breite -= (a22 * dx - a12 * dy) / det;
     laenge -= (a11 * dy - a21 * dx) / det;
   }
+  // Bereich wie bei nachUtm33, mit Spielraum fuer Punkte genau auf dem Rand.
+  const e = 1e-6;
+  const imBereich = breite > -e && breite < 84 + e && laenge > 3 - e && laenge < 27 + e;
+  if (rest > 1e-3 || !imBereich) return null;
   return { breite, laenge };
 }
 
@@ -137,7 +145,9 @@ export function ausUtm33(x, y) {
    Auf den Entfernungen einer Untersuchungsflaeche liegt der Fehler
    gegenueber der Ellipsoidrechnung im Zentimeterbereich - unerheblich
    neben der GNSS-Genauigkeit. */
-export function entfernung(breite1, laenge1, breite2, laenge2) {
+export function entfernung(...werte) {
+  const [breite1, laenge1, breite2, laenge2] = werte.map(alsZahl);
+  // Fehlt ein Wert, gibt es keine Entfernung (NaN) - nicht die zum Aequator.
   const R = 6371008.8;
   const dPhi = bogen(breite2 - breite1);
   const dLam = bogen(laenge2 - laenge1);
@@ -148,7 +158,8 @@ export function entfernung(breite1, laenge1, breite2, laenge2) {
 }
 
 /* Rechtweisende Peilung von Punkt 1 nach Punkt 2, in Grad ab Nord. */
-export function peilung(breite1, laenge1, breite2, laenge2) {
+export function peilung(...werte) {
+  const [breite1, laenge1, breite2, laenge2] = werte.map(alsZahl);
   const p1 = bogen(breite1);
   const p2 = bogen(breite2);
   const dl = bogen(laenge2 - laenge1);
@@ -159,10 +170,12 @@ export function peilung(breite1, laenge1, breite2, laenge2) {
 
 const HIMMELSRICHTUNGEN = ["N", "NO", "O", "SO", "S", "SW", "W", "NW"];
 
-export const himmelsrichtung = (winkel) =>
-  Number.isFinite(winkel)
+export const himmelsrichtung = (eingabe) => {
+  const winkel = alsZahl(eingabe);
+  return Number.isFinite(winkel)
     ? HIMMELSRICHTUNGEN[Math.round((((winkel % 360) + 360) % 360) / 45) % 8]
     : "";
+};
 
 /* Koordinatenpaare am Stueck, wie sie in den Ausgaben stehen sollen.
    UTM: Rechts- und Hochwert fuer die Aufnahmemaske; Grad: Breite, Laenge
