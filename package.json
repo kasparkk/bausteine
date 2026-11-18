@@ -1,0 +1,9 @@
+{
+  "name": "bausteine",
+  "version": "0.1.0",
+  "description": "Getestete Bausteine fuer meine Apps",
+  "type": "module",
+  "main": "index.js",
+  "exports": { ".": "./index.js", "./geo": "./geo.js", "./zahlen": "./zahlen.js" },
+  "scripts": { "test": "node --test" }
+}
