@@ -30,6 +30,8 @@ Einbinden in eine App: `npm install github:kasparkk/bausteine`
 
 ## Aenderungen
 
+**0.3.1** Doppeltes entfernt, Ergebnisse unveraendert (byte-gleiche Excel-Dateien): gemeinsamer Meridianbogen-Koeffizient und Umrechnungshelfer in `geo`; `alsZahl` einmal in `zahlen`, von `geo` mitbenutzt; in `export` die ZIP-Kopffelder, Namensraeume und Blatt-Schleifen je nur einmal.
+
 **0.3.0** (Durchsicht aller Bausteine)
 - `geo`: Rueckweg UTM nach Grad wird nachgebessert, jetzt auf Millimeter genau statt bis 6 m am Rand; unmoegliche oder vertauschte Werte ergeben `null`; leere Eingaben ("") erfinden keinen Punkt am Aequator mehr; `himmelsrichtung(NaN)` ergibt "".
 - `zahlen`: fehlende Werte ergeben "–" statt "0,0" oder "NaN"; kein "-0,0" mehr.

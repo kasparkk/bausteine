@@ -10,8 +10,13 @@
 
 export const FEHLT = "–";
 
+/* Eingabe als Zahl; null, undefined und "" gelten als "kein Wert" (NaN).
+   Number("") waere sonst 0 - eine erfundene Null, bei Koordinaten sogar ein
+   Punkt am Aequator. */
+export const alsZahl = (wert) => (wert == null || wert === "" ? NaN : Number(wert));
+
 export const nk = (wert, stellen = 1, ort = "de-DE") => {
-  const zahl = wert == null || wert === "" ? NaN : Number(wert);
+  const zahl = alsZahl(wert);
   if (!Number.isFinite(zahl)) return FEHLT;
   const text = zahl.toLocaleString(ort, {
     minimumFractionDigits: stellen,

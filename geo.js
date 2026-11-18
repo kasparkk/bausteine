@@ -26,6 +26,8 @@
    Raendern des zugelassenen Bereichs (3 bzw. 27 Grad Ost) bis 40 cm.
    Die Umrechnung gilt nur fuer die Nordhalbkugel. */
 
+import { alsZahl } from "./zahlen.js";
+
 const a = 6378137.0; // grosse Halbachse GRS80
 const f = 1 / 298.257222101; // Abplattung GRS80
 const k0 = 0.9996; // Massstabsfaktor der UTM-Abbildung
@@ -35,13 +37,18 @@ const FE = 500000; // Ostwert des Mittelmeridians
 const e2 = f * (2 - f);
 const ep2 = e2 / (1 - e2);
 
+// Leitkoeffizient der Meridianbogenreihe; Hin- und Rueckweg brauchen ihn.
+const M0 = 1 - e2 / 4 - (3 * e2 * e2) / 64 - (5 * e2 ** 3) / 256;
+
 const bogen = (grad) => (grad * Math.PI) / 180;
+const grad = (bogenmass) => (bogenmass * 180) / Math.PI;
+const aufCm = (meter) => Math.round(meter * 100) / 100;
 
 /* Meridianbogenlaenge vom Aequator bis zur Breite phi. */
 function meridianbogen(phi) {
   return (
     a *
-    ((1 - e2 / 4 - (3 * e2 * e2) / 64 - (5 * e2 ** 3) / 256) * phi -
+    (M0 * phi -
       ((3 * e2) / 8 + (3 * e2 * e2) / 32 + (45 * e2 ** 3) / 1024) * Math.sin(2 * phi) +
       ((15 * e2 * e2) / 256 + (45 * e2 ** 3) / 1024) * Math.sin(4 * phi) -
       ((35 * e2 ** 3) / 3072) * Math.sin(6 * phi))
@@ -57,7 +64,7 @@ export function nachUtm33(breiteGrad, laengeGrad) {
   if (breiteGrad < -80 || breiteGrad > 84) return null;
   if (laengeGrad < 3 || laengeGrad > 27) return null;
   const { x, y } = vorwaerts(breiteGrad, laengeGrad);
-  return { x: Math.round(x * 100) / 100, y: Math.round(y * 100) / 100 };
+  return { x: aufCm(x), y: aufCm(y) };
 }
 
 /* Die eigentliche Rechnung, ungerundet und ohne Pruefung. */
@@ -100,14 +107,12 @@ function vorwaerts(breiteGrad, laengeGrad) {
    Entfernungsanzeige aber Laenge und Breite brauchen. */
 export function ausUtm33(x, y) {
   if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-  // Ausserhalb dessen liefert die Reihenentwicklung keine brauchbaren Werte;
-  // dort liegt meist ein Tippfehler oder vertauschte Werte vor.
-  // x-Spanne passend zu nachUtm33 (3-27 Grad Ost ergeben etwa -0,42 bis 1,27 Mio.).
+  // Spanne passend zu nachUtm33 (3-27 Grad Ost ergeben x von etwa -0,42 bis
+  // 1,27 Mio.); was ausserhalb liegt, ist ein Tippfehler oder vertauscht.
   if (x < -500000 || x > 1500000 || y < 0 || y > 9400000) return null;
 
   const M = y / k0;
-  const mu =
-    M / (a * (1 - e2 / 4 - (3 * e2 * e2) / 64 - (5 * e2 ** 3) / 256));
+  const mu = M / (a * M0);
   const e1 = (1 - Math.sqrt(1 - e2)) / (1 + Math.sqrt(1 - e2));
 
   const phi1 =
@@ -146,8 +151,8 @@ export function ausUtm33(x, y) {
      Deshalb wird nachgebessert: so lange Breite und Laenge verschieben, bis
      der Hinweg wieder genau x und y trifft. Drei Schritte reichen fuer
      Millimeter. */
-  let breite = (phi * 180) / Math.PI;
-  let laenge = (lam * 180) / Math.PI;
+  let breite = grad(phi);
+  let laenge = grad(lam);
   const h = 1e-6;
   for (let schritt = 0; schritt < 3; schritt++) {
     const p = vorwaerts(breite, laenge);
@@ -186,24 +191,20 @@ export function peilung(breite1, laenge1, breite2, laenge2) {
   const dl = bogen(laenge2 - laenge1);
   const y = Math.sin(dl) * Math.cos(p2);
   const x = Math.cos(p1) * Math.sin(p2) - Math.sin(p1) * Math.cos(p2) * Math.cos(dl);
-  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+  return (grad(Math.atan2(y, x)) + 360) % 360;
 }
 
 const HIMMELSRICHTUNGEN = ["N", "NO", "O", "SO", "S", "SW", "W", "NW"];
 
-export const himmelsrichtung = (grad) =>
-  Number.isFinite(grad)
-    ? HIMMELSRICHTUNGEN[Math.round((((grad % 360) + 360) % 360) / 45) % 8]
+export const himmelsrichtung = (winkel) =>
+  Number.isFinite(winkel)
+    ? HIMMELSRICHTUNGEN[Math.round((((winkel % 360) + 360) % 360) / 45) % 8]
     : "";
 
 /* Koordinatenpaare am Stueck, wie sie in den Ausgaben stehen sollen.
    UTM: Rechts- und Hochwert fuer die Aufnahmemaske; Grad: Breite, Laenge
    fuer Kartenprogramme. Punkt als Dezimaltrenner, weil das Komma die beiden
-   Werte trennt. */
-/* null, undefined und "" gelten als "kein Wert" - Number("") waere 0 und
-   wuerde sonst einen Punkt am Aequator erfinden. */
-const alsZahl = (wert) => (wert == null || wert === "" ? NaN : Number(wert));
-
+   Werte trennt. Leere Eingaben ergeben "" (siehe alsZahl). */
 export const utmPaar = (breite, laenge) => {
   const utm = nachUtm33(alsZahl(breite), alsZahl(laenge));
   return utm ? `${utm.x.toFixed(2)}, ${utm.y.toFixed(2)}` : "";

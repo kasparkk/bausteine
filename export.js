@@ -17,6 +17,12 @@
 
 const XML_KOPF = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
 
+// Namensraeume und Typen des Office-Formats, jeweils einmal hinterlegt.
+const NS_TABELLE = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+const NS_PAKET_BEZUG = "http://schemas.openxmlformats.org/package/2006/relationships";
+const NS_DOK_BEZUG = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+const TYP_OFFICE = "application/vnd.openxmlformats-officedocument.spreadsheetml";
+
 function xmlText(wert) {
   return String(wert)
     .replace(/&/g, "&amp;")
@@ -66,7 +72,7 @@ function blattXml(zeilen) {
     .join("");
 
   return (
-    `${XML_KOPF}<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">` +
+    `${XML_KOPF}<worksheet xmlns="${NS_TABELLE}">` +
     `<sheetData>${inhalt}</sheetData></worksheet>`
   );
 }
@@ -93,6 +99,21 @@ function crc32(bytes) {
   return (wert ^ 0xffffffff) >>> 0;
 }
 
+/* Die Felder ab "benoetigte Version" bis "Laenge Zusatzfeld" stehen im
+   lokalen Kopf und im zentralen Verzeichnis gleich - nur an anderer Stelle. */
+function gemeinsameFelder(sicht, ab, pruefsumme, groesse, nameLaenge) {
+  sicht.setUint16(ab, 20, true); // benoetigte Version
+  sicht.setUint16(ab + 2, 0, true); // Flags
+  sicht.setUint16(ab + 4, 0, true); // Verfahren: unkomprimiert
+  sicht.setUint16(ab + 6, 0, true); // Uhrzeit
+  sicht.setUint16(ab + 8, 0x0021, true); // Datum (01.01.1980)
+  sicht.setUint32(ab + 10, pruefsumme, true);
+  sicht.setUint32(ab + 14, groesse, true); // gepackt
+  sicht.setUint32(ab + 18, groesse, true); // ungepackt
+  sicht.setUint16(ab + 22, nameLaenge, true);
+  sicht.setUint16(ab + 24, 0, true); // Zusatzfeld
+}
+
 function zipBauen(dateien) {
   const kodierer = new TextEncoder();
   const stuecke = [];
@@ -104,40 +125,21 @@ function zipBauen(dateien) {
     const daten = kodierer.encode(datei.inhalt);
     const pruefsumme = crc32(daten);
 
+    // Lokaler Kopf: Signatur, gemeinsame Felder, Name
     const kopf = new Uint8Array(30 + name.length);
     const k = new DataView(kopf.buffer);
-    k.setUint32(0, 0x04034b50, true); // Signatur
-    k.setUint16(4, 20, true); // benoetigte Version
-    k.setUint16(6, 0, true); // Flags
-    k.setUint16(8, 0, true); // Verfahren: unkomprimiert
-    k.setUint16(10, 0, true); // Uhrzeit
-    k.setUint16(12, 0x0021, true); // Datum (01.01.1980)
-    k.setUint32(14, pruefsumme, true);
-    k.setUint32(18, daten.length, true);
-    k.setUint32(22, daten.length, true);
-    k.setUint16(26, name.length, true);
-    k.setUint16(28, 0, true); // Zusatzfeld
+    k.setUint32(0, 0x04034b50, true);
+    gemeinsameFelder(k, 4, pruefsumme, daten.length, name.length);
     kopf.set(name, 30);
     stuecke.push(kopf, daten);
 
+    // Eintrag im zentralen Verzeichnis; Kommentar, Datentraeger und
+    // Attribute bleiben 0 (neue Arrays sind schon genullt).
     const eintrag = new Uint8Array(46 + name.length);
     const e = new DataView(eintrag.buffer);
     e.setUint32(0, 0x02014b50, true);
     e.setUint16(4, 20, true); // erzeugt von Version
-    e.setUint16(6, 20, true); // benoetigte Version
-    e.setUint16(8, 0, true);
-    e.setUint16(10, 0, true);
-    e.setUint16(12, 0, true);
-    e.setUint16(14, 0x0021, true);
-    e.setUint32(16, pruefsumme, true);
-    e.setUint32(20, daten.length, true);
-    e.setUint32(24, daten.length, true);
-    e.setUint16(28, name.length, true);
-    e.setUint16(30, 0, true);
-    e.setUint16(32, 0, true);
-    e.setUint16(34, 0, true);
-    e.setUint16(36, 0, true);
-    e.setUint32(38, 0, true);
+    gemeinsameFelder(e, 6, pruefsumme, daten.length, name.length);
     e.setUint32(42, versatz, true);
     eintrag.set(name, 46);
     zentral.push(eintrag);
@@ -145,21 +147,16 @@ function zipBauen(dateien) {
     versatz += kopf.length + daten.length;
   }
 
-  const zentralLaenge = zentral.reduce((summe, e) => summe + e.length, 0);
+  // Abschluss des zentralen Verzeichnisses
   const schluss = new Uint8Array(22);
   const s = new DataView(schluss.buffer);
   s.setUint32(0, 0x06054b50, true);
-  s.setUint16(4, 0, true);
-  s.setUint16(6, 0, true);
   s.setUint16(8, dateien.length, true);
   s.setUint16(10, dateien.length, true);
-  s.setUint32(12, zentralLaenge, true);
+  s.setUint32(12, zentral.reduce((summe, z) => summe + z.length, 0), true);
   s.setUint32(16, versatz, true);
-  s.setUint16(20, 0, true);
 
-  return new Blob([...stuecke, ...zentral, schluss], {
-    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  });
+  return new Blob([...stuecke, ...zentral, schluss], { type: `${TYP_OFFICE}.sheet` });
 }
 
 /* Baut aus Zeilen (Array von Arrays; Zahlen bleiben Zahlen) eine .xlsx.
@@ -199,6 +196,11 @@ export function baueXlsxMehrblatt(blaetter) {
     return name;
   });
 
+  // Fuer jedes Blatt ein Stueck XML; Blaetter zaehlen ab 1.
+  const jeBlatt = (stueck) => teile.map((_, i) => stueck(i + 1)).join("");
+  const bezuege = (eintraege) =>
+    `${XML_KOPF}<Relationships xmlns="${NS_PAKET_BEZUG}">${eintraege}</Relationships>`;
+
   const dateien = [
     {
       name: "[Content_Types].xml",
@@ -206,56 +208,31 @@ export function baueXlsxMehrblatt(blaetter) {
         `${XML_KOPF}<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">` +
         `<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>` +
         `<Default Extension="xml" ContentType="application/xml"/>` +
-        `<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>` +
-        teile
-          .map(
-            (_, i) =>
-              `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ` +
-              `ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`,
-          )
-          .join("") +
+        `<Override PartName="/xl/workbook.xml" ContentType="${TYP_OFFICE}.sheet.main+xml"/>` +
+        jeBlatt((n) => `<Override PartName="/xl/worksheets/sheet${n}.xml" ContentType="${TYP_OFFICE}.worksheet+xml"/>`) +
         `</Types>`,
     },
     {
       name: "_rels/.rels",
-      inhalt:
-        `${XML_KOPF}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
-        `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>` +
-        `</Relationships>`,
+      inhalt: bezuege(
+        `<Relationship Id="rId1" Type="${NS_DOK_BEZUG}/officeDocument" Target="xl/workbook.xml"/>`,
+      ),
     },
     {
       name: "xl/workbook.xml",
       inhalt:
-        `${XML_KOPF}<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ` +
-        `xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">` +
-        `<sheets>` +
-        namen
-          .map(
-            (name, i) =>
-              `<sheet name="${xmlText(name)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`,
-          )
-          .join("") +
+        `${XML_KOPF}<workbook xmlns="${NS_TABELLE}" xmlns:r="${NS_DOK_BEZUG}"><sheets>` +
+        jeBlatt((n) => `<sheet name="${xmlText(namen[n - 1])}" sheetId="${n}" r:id="rId${n}"/>`) +
         `</sheets></workbook>`,
     },
     {
       name: "xl/_rels/workbook.xml.rels",
-      inhalt:
-        `${XML_KOPF}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
-        teile
-          .map(
-            (_, i) =>
-              `<Relationship Id="rId${i + 1}" ` +
-              `Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" ` +
-              `Target="worksheets/sheet${i + 1}.xml"/>`,
-          )
-          .join("") +
-        `</Relationships>`,
+      inhalt: bezuege(
+        jeBlatt((n) => `<Relationship Id="rId${n}" Type="${NS_DOK_BEZUG}/worksheet" Target="worksheets/sheet${n}.xml"/>`),
+      ),
     },
+    ...teile.map((blatt, i) => ({ name: `xl/worksheets/sheet${i + 1}.xml`, inhalt: blattXml(blatt.zeilen) })),
   ];
-
-  teile.forEach((blatt, i) =>
-    dateien.push({ name: `xl/worksheets/sheet${i + 1}.xml`, inhalt: blattXml(blatt.zeilen) }),
-  );
 
   return zipBauen(dateien);
 }
