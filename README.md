@@ -32,6 +32,8 @@ Einbinden in eine App: `npm install github:kasparkk/bausteine`
 
 ## Aenderungen
 
+**0.7.1** `kamera` meldet bei "nein" den Grund mit; Typen fuer TypeScript (kamera.d.ts).
+
 **0.7.0** Neu: `kamera()`.
 
 **0.6.0** Neu: `gps.ortung()` und `zahlen.leseZahl()`.

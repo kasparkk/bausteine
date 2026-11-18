@@ -1,6 +1,6 @@
 {
   "name": "bausteine",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "Getestete Bausteine fuer meine Apps",
   "type": "module",
   "main": "index.js",

@@ -57,14 +57,14 @@ test("startet die Rueckkamera mit begrenzter Groesse und meldet laeuft", async (
 test("keine Freigabe oder kein Geraet: nein", async () => {
   const u = umgebung({ verweigert: true });
   const zustaende = [];
-  kamera(u.video, { aenderung: (z) => zustaende.push(z) });
+  kamera(u.video, { aenderung: (z, f) => zustaende.push([z, f?.message]) });
   await warte();
-  assert.deepEqual(zustaende, ["nein"]);
+  assert.deepEqual(zustaende, [["nein", "NotAllowedError"]]);
   Object.defineProperty(globalThis, "navigator", { configurable: true, value: {} });
   const z2 = [];
-  kamera(u.video, { aenderung: (z) => z2.push(z) });
+  kamera(u.video, { aenderung: (z, f) => z2.push([z, f?.name]) });
   await warte();
-  assert.deepEqual(z2, ["nein"]);
+  assert.deepEqual(z2, [["nein", "NotSupportedError"]]);
 });
 
 test("stop waehrend der Freigabe: Kamera geht gleich wieder aus, keine Meldung", async () => {

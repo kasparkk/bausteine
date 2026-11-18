@@ -9,12 +9,16 @@
    video      das <video>-Element oder eine Funktion, die es liefert (wird
               erst gebraucht, wenn das Bild da ist - in React also z. B.
               () => videoRef.current)
-   aenderung  wird mit "laeuft" oder "nein" aufgerufen ("nein": kein Geraet,
-              keine Freigabe oder Fehler)
+   aenderung  wird mit "laeuft" oder "nein" aufgerufen; bei "nein" kommt als
+              zweites der Grund mit (fehler.name, z. B. "NotAllowedError" =
+              Freigabe verweigert, "NotSupportedError" = Geraet/Browser kann
+              keine Kamera)
    breite, hoehe, bildrate
               gewuenschte Bildgroesse. Ohne diese Bitte liefern manche Geraete
               1080p oder mehr - fuer einen Sucher auf dem Handy verschwendete
-              Rechenzeit.
+              Rechenzeit. Fuer Fotos in hoher Aufloesung ist ein Live-Bild
+              ohnehin der falsche Weg: <input type="file" capture> oeffnet
+              die Kamera-App des Handys mit voller Sensoraufloesung.
 
    Was der Baustein selbst erledigt:
    - Rueckkamera, wo vorhanden (sonst die, die es gibt).
@@ -36,7 +40,7 @@ export function kamera(video, { aenderung = () => {}, breite = 1280, hoehe = 960
 
   const starten = async () => {
     const medien = globalThis.navigator?.mediaDevices;
-    if (!medien?.getUserMedia) return aenderung("nein");
+    if (!medien?.getUserMedia) return aenderung("nein", { name: "NotSupportedError" });
     try {
       const neu = await medien.getUserMedia({
         video: {
@@ -59,8 +63,8 @@ export function kamera(video, { aenderung = () => {}, breite = 1280, hoehe = 960
         el.play?.()?.catch?.(() => {});
       }
       aenderung("laeuft");
-    } catch {
-      if (!gestoppt) aenderung("nein");
+    } catch (fehler) {
+      if (!gestoppt) aenderung("nein", fehler);
     }
   };
 
