@@ -23,13 +23,11 @@ const NS_PAKET_BEZUG = "http://schemas.openxmlformats.org/package/2006/relations
 const NS_DOK_BEZUG = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 const TYP_OFFICE = "application/vnd.openxmlformats-officedocument.spreadsheetml";
 
+const XML_ZEICHEN = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" };
+
 function xmlText(wert) {
   return String(wert)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;")
+    .replace(/[&<>"']/g, (z) => XML_ZEICHEN[z])
     // Steuerzeichen sind in XML nicht erlaubt und wuerden Excel stoeren.
     .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "");
 }

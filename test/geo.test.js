@@ -62,8 +62,16 @@ test("Raender des Bereichs: pyproj-Abweichung unter 0,5 m, Hin und zurueck exakt
   assert.equal(nachUtm33(52, 2.9), null);
 });
 
+test("Rueckweg passt im ganzen Bereich zum Hinweg", () => {
+  for (let b = 0.5; b <= 84; b += 4.1) for (let l = 3; l <= 27; l += 1.7) {
+    const r = nachUtm33(b, l);
+    const z = ausUtm33(r.x, r.y);
+    assert.ok(z && entfernung(b, l, z.breite, z.laenge) < 0.01, `${b}/${l}`);
+  }
+});
+
 test("ausUtm33 lehnt unmoegliche Werte ab", () => {
-  assert.equal(ausUtm33(-600000, 5800000), null);
+  assert.equal(ausUtm33(-1000000, 5800000), null);
   assert.equal(ausUtm33(400000, -1), null);
   assert.equal(ausUtm33(5800000, 400000), null, "vertauschte Werte");
 });

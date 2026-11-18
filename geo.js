@@ -37,9 +37,6 @@ const FE = 500000; // Ostwert des Mittelmeridians
 const e2 = f * (2 - f);
 const ep2 = e2 / (1 - e2);
 
-// Leitkoeffizient der Meridianbogenreihe; Hin- und Rueckweg brauchen ihn.
-const M0 = 1 - e2 / 4 - (3 * e2 * e2) / 64 - (5 * e2 ** 3) / 256;
-
 const bogen = (grad) => (grad * Math.PI) / 180;
 const grad = (bogenmass) => (bogenmass * 180) / Math.PI;
 const aufCm = (meter) => Math.round(meter * 100) / 100;
@@ -48,7 +45,7 @@ const aufCm = (meter) => Math.round(meter * 100) / 100;
 function meridianbogen(phi) {
   return (
     a *
-    (M0 * phi -
+    ((1 - e2 / 4 - (3 * e2 * e2) / 64 - (5 * e2 ** 3) / 256) * phi -
       ((3 * e2) / 8 + (3 * e2 * e2) / 32 + (45 * e2 ** 3) / 1024) * Math.sin(2 * phi) +
       ((15 * e2 * e2) / 256 + (45 * e2 ** 3) / 1024) * Math.sin(4 * phi) -
       ((35 * e2 ** 3) / 3072) * Math.sin(6 * phi))
@@ -104,57 +101,23 @@ function vorwaerts(breiteGrad, laengeGrad) {
 
 /* Rueckweg: EPSG:25833 -> Laenge/Breite in Grad. Wird gebraucht, wenn
    Soll-Koordinaten als Rechts-/Hochwert eingegeben werden, die Karte und die
-   Entfernungsanzeige aber Laenge und Breite brauchen. */
+   Entfernungsanzeige aber Laenge und Breite brauchen.
+
+   Statt einer eigenen Reihe fuer den Rueckweg wird der Hinweg umgekehrt:
+   grob schaetzen, dann Breite und Laenge so lange verschieben (Newton), bis
+   der Hinweg x und y trifft. Nach vier bis fuenf Schritten auf Bruchteile
+   eines Millimeters genau, im ganzen Bereich. */
 export function ausUtm33(x, y) {
   if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-  // Spanne passend zu nachUtm33 (3-27 Grad Ost ergeben x von etwa -0,42 bis
-  // 1,27 Mio.); was ausserhalb liegt, ist ein Tippfehler oder vertauscht.
-  if (x < -500000 || x > 1500000 || y < 0 || y > 9400000) return null;
+  // Spanne passend zu nachUtm33 (3-27 Grad Ost ergeben am Aequator x von
+  // etwa -0,85 bis 1,85 Mio.); was ausserhalb liegt, ist ein Tippfehler
+  // oder vertauscht.
+  if (x < -900000 || x > 1900000 || y < 0 || y > 9400000) return null;
 
-  const M = y / k0;
-  const mu = M / (a * M0);
-  const e1 = (1 - Math.sqrt(1 - e2)) / (1 + Math.sqrt(1 - e2));
-
-  const phi1 =
-    mu +
-    ((3 * e1) / 2 - (27 * e1 ** 3) / 32) * Math.sin(2 * mu) +
-    ((21 * e1 * e1) / 16 - (55 * e1 ** 4) / 32) * Math.sin(4 * mu) +
-    ((151 * e1 ** 3) / 96) * Math.sin(6 * mu) +
-    ((1097 * e1 ** 4) / 512) * Math.sin(8 * mu);
-
-  const sinPhi1 = Math.sin(phi1);
-  const cosPhi1 = Math.cos(phi1);
-  const tanPhi1 = Math.tan(phi1);
-
-  const C1 = ep2 * cosPhi1 * cosPhi1;
-  const T1 = tanPhi1 * tanPhi1;
-  const N1 = a / Math.sqrt(1 - e2 * sinPhi1 * sinPhi1);
-  const R1 = (a * (1 - e2)) / (1 - e2 * sinPhi1 * sinPhi1) ** 1.5;
-  const D = (x - FE) / (N1 * k0);
-
-  const phi =
-    phi1 -
-    ((N1 * tanPhi1) / R1) *
-      ((D * D) / 2 -
-        ((5 + 3 * T1 + 10 * C1 - 4 * C1 * C1 - 9 * ep2) * D ** 4) / 24 +
-        ((61 + 90 * T1 + 298 * C1 + 45 * T1 * T1 - 252 * ep2 - 3 * C1 * C1) * D ** 6) / 720);
-
-  const lam =
-    LON0 +
-    (D -
-      ((1 + 2 * T1 + C1) * D ** 3) / 6 +
-      ((5 - 2 * C1 + 28 * T1 - 3 * C1 * C1 + 8 * ep2 + 24 * T1 * T1) * D ** 5) / 120) /
-      cosPhi1;
-
-  /* Die Reihe fuer den Rueckweg ist am Rand des Bereichs ungenauer als die
-     fuer den Hinweg (bei 9-12 Grad Abstand zum Mittelmeridian 1-6 m).
-     Deshalb wird nachgebessert: so lange Breite und Laenge verschieben, bis
-     der Hinweg wieder genau x und y trifft. Drei Schritte reichen fuer
-     Millimeter. */
-  let breite = grad(phi);
-  let laenge = grad(lam);
+  let breite = y / 111132; // Meter je Breitengrad
+  let laenge = 15 + (x - FE) / (111320 * Math.cos(bogen(breite)));
   const h = 1e-6;
-  for (let schritt = 0; schritt < 3; schritt++) {
+  for (let schritt = 0; schritt < 10; schritt++) {
     const p = vorwaerts(breite, laenge);
     const dx = p.x - x;
     const dy = p.y - y;

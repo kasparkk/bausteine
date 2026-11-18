@@ -30,6 +30,8 @@ Einbinden in eine App: `npm install github:kasparkk/bausteine`
 
 ## Aenderungen
 
+**0.3.2** Kuerzer bei gleicher Funktion: Rueckweg UTM nach Grad ohne eigene Reihe (grobe Schaetzung + Newton, im ganzen Bereich unter 1 cm zum Hinweg, auch suedlich von 42 Grad, wo vorher `null` kam); Maskieren fuer Excel in einem Schritt.
+
 **0.3.1** Doppeltes entfernt, Ergebnisse unveraendert (byte-gleiche Excel-Dateien): gemeinsamer Meridianbogen-Koeffizient und Umrechnungshelfer in `geo`; `alsZahl` einmal in `zahlen`, von `geo` mitbenutzt; in `export` die ZIP-Kopffelder, Namensraeume und Blatt-Schleifen je nur einmal.
 
 **0.3.0** (Durchsicht aller Bausteine)
