@@ -30,3 +30,13 @@ export const nk = (wert, stellen = 1, ort = "de-DE") => {
     maximumFractionDigits: stellen,
   });
 };
+
+/* Eingetippte Zahl lesen, deutsch oder englisch: "12,5" und "12.5" ergeben
+   12.5. Was sich nicht lesen laesst (leer, Text), ergibt ersatz - fuer
+   Eingabefelder, in denen ein leeres Feld als 0 zaehlen soll.
+   Wie parseFloat: fuehrende Zahl zaehlt ("12,5 m" -> 12.5); nur das erste
+   Komma wird zum Punkt, Tausenderpunkte ("1.234,5") werden nicht erkannt. */
+export const leseZahl = (wert, ersatz = 0) => {
+  const zahl = parseFloat(String(wert ?? "").replace(",", "."));
+  return Number.isFinite(zahl) ? zahl : ersatz;
+};

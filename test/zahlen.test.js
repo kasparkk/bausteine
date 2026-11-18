@@ -37,3 +37,14 @@ test("gerundete Null ohne Minus auch mit typografischem Minus", () => {
   assert.equal(nk(-0.04, 1, "fi-FI"), "0,0");
   assert.equal(nk(-0.06, 1, "sv-SE"), "\u22120,1");
 });
+
+test("leseZahl: Komma und Punkt, Ersatz bei Unlesbarem", async () => {
+  const { leseZahl } = await import("../zahlen.js");
+  assert.equal(leseZahl("12,5"), 12.5);
+  assert.equal(leseZahl("12.5"), 12.5);
+  assert.equal(leseZahl(" 7 "), 7);
+  assert.equal(leseZahl("12,5 m"), 12.5);
+  assert.equal(leseZahl(3), 3);
+  for (const w of [null, undefined, "", "abc"]) assert.equal(leseZahl(w), 0);
+  assert.ok(Number.isNaN(leseZahl("", NaN)));
+});
