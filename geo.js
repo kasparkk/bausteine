@@ -19,7 +19,12 @@
 
    Gerechnet wird die uebliche Reihenentwicklung der transversalen
    Mercator-Abbildung (Snyder, Map Projections - A Working Manual) auf dem
-   GRS80-Ellipsoid. */
+   GRS80-Ellipsoid.
+
+   Genauigkeit gegen pyproj (geprueft 47-55 Grad Nord): innerhalb der Zone 33
+   (12-18 Grad Ost) unter 1 cm, bei 6 bzw. 24 Grad Ost unter 5 cm, an den
+   Raendern des zugelassenen Bereichs (3 bzw. 27 Grad Ost) bis 40 cm.
+   Die Umrechnung gilt nur fuer die Nordhalbkugel. */
 
 const a = 6378137.0; // grosse Halbachse GRS80
 const f = 1 / 298.257222101; // Abplattung GRS80
@@ -51,7 +56,12 @@ export function nachUtm33(breiteGrad, laengeGrad) {
   if (!Number.isFinite(breiteGrad) || !Number.isFinite(laengeGrad)) return null;
   if (breiteGrad < -80 || breiteGrad > 84) return null;
   if (laengeGrad < 3 || laengeGrad > 27) return null;
+  const { x, y } = vorwaerts(breiteGrad, laengeGrad);
+  return { x: Math.round(x * 100) / 100, y: Math.round(y * 100) / 100 };
+}
 
+/* Die eigentliche Rechnung, ungerundet und ohne Pruefung. */
+function vorwaerts(breiteGrad, laengeGrad) {
   const phi = bogen(breiteGrad);
   const dl = bogen(laengeGrad) - LON0;
 
@@ -82,7 +92,7 @@ export function nachUtm33(breiteGrad, laengeGrad) {
           ((5 - T + 9 * C + 4 * C * C) * A ** 4) / 24 +
           ((61 - 58 * T + T * T + 600 * C - 330 * ep2) * A ** 6) / 720));
 
-  return { x: Math.round(x * 100) / 100, y: Math.round(y * 100) / 100 };
+  return { x, y };
 }
 
 /* Rueckweg: EPSG:25833 -> Laenge/Breite in Grad. Wird gebraucht, wenn
@@ -90,6 +100,10 @@ export function nachUtm33(breiteGrad, laengeGrad) {
    Entfernungsanzeige aber Laenge und Breite brauchen. */
 export function ausUtm33(x, y) {
   if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  // Ausserhalb dessen liefert die Reihenentwicklung keine brauchbaren Werte;
+  // dort liegt meist ein Tippfehler oder vertauschte Werte vor.
+  // x-Spanne passend zu nachUtm33 (3-27 Grad Ost ergeben etwa -0,42 bis 1,27 Mio.).
+  if (x < -500000 || x > 1500000 || y < 0 || y > 9400000) return null;
 
   const M = y / k0;
   const mu =
@@ -127,7 +141,28 @@ export function ausUtm33(x, y) {
       ((5 - 2 * C1 + 28 * T1 - 3 * C1 * C1 + 8 * ep2 + 24 * T1 * T1) * D ** 5) / 120) /
       cosPhi1;
 
-  return { breite: (phi * 180) / Math.PI, laenge: (lam * 180) / Math.PI };
+  /* Die Reihe fuer den Rueckweg ist am Rand des Bereichs ungenauer als die
+     fuer den Hinweg (bei 9-12 Grad Abstand zum Mittelmeridian 1-6 m).
+     Deshalb wird nachgebessert: so lange Breite und Laenge verschieben, bis
+     der Hinweg wieder genau x und y trifft. Drei Schritte reichen fuer
+     Millimeter. */
+  let breite = (phi * 180) / Math.PI;
+  let laenge = (lam * 180) / Math.PI;
+  const h = 1e-6;
+  for (let schritt = 0; schritt < 3; schritt++) {
+    const p = vorwaerts(breite, laenge);
+    const dx = p.x - x;
+    const dy = p.y - y;
+    if (Math.hypot(dx, dy) < 1e-4) break;
+    const pb = vorwaerts(breite + h, laenge);
+    const pl = vorwaerts(breite, laenge + h);
+    const a11 = (pb.x - p.x) / h, a12 = (pl.x - p.x) / h;
+    const a21 = (pb.y - p.y) / h, a22 = (pl.y - p.y) / h;
+    const det = a11 * a22 - a12 * a21;
+    breite -= (a22 * dx - a12 * dy) / det;
+    laenge -= (a11 * dy - a21 * dx) / det;
+  }
+  return { breite, laenge };
 }
 
 /* Entfernung zweier Punkte in Metern (Haversine, Erde als Kugel).
@@ -157,19 +192,25 @@ export function peilung(breite1, laenge1, breite2, laenge2) {
 const HIMMELSRICHTUNGEN = ["N", "NO", "O", "SO", "S", "SW", "W", "NW"];
 
 export const himmelsrichtung = (grad) =>
-  HIMMELSRICHTUNGEN[Math.round((((grad % 360) + 360) % 360) / 45) % 8];
+  Number.isFinite(grad)
+    ? HIMMELSRICHTUNGEN[Math.round((((grad % 360) + 360) % 360) / 45) % 8]
+    : "";
 
 /* Koordinatenpaare am Stueck, wie sie in den Ausgaben stehen sollen.
    UTM: Rechts- und Hochwert fuer die Aufnahmemaske; Grad: Breite, Laenge
    fuer Kartenprogramme. Punkt als Dezimaltrenner, weil das Komma die beiden
    Werte trennt. */
+/* null, undefined und "" gelten als "kein Wert" - Number("") waere 0 und
+   wuerde sonst einen Punkt am Aequator erfinden. */
+const alsZahl = (wert) => (wert == null || wert === "" ? NaN : Number(wert));
+
 export const utmPaar = (breite, laenge) => {
-  if (breite == null || laenge == null) return "";
-  const utm = nachUtm33(Number(breite), Number(laenge));
+  const utm = nachUtm33(alsZahl(breite), alsZahl(laenge));
   return utm ? `${utm.x.toFixed(2)}, ${utm.y.toFixed(2)}` : "";
 };
 
-export const gradPaar = (breite, laenge) =>
-  breite == null || laenge == null
-    ? ""
-    : `${Number(breite).toFixed(6)}, ${Number(laenge).toFixed(6)}`;
+export const gradPaar = (breite, laenge) => {
+  const b = alsZahl(breite);
+  const l = alsZahl(laenge);
+  return Number.isFinite(b) && Number.isFinite(l) ? `${b.toFixed(6)}, ${l.toFixed(6)}` : "";
+};

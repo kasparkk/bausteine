@@ -27,3 +27,10 @@ Einbinden in eine App: `npm install github:kasparkk/bausteine`
 ## Als Naechstes
 
 `speicher`, `pwa`; in wald-lidar: `laz`, `baumerkennung`.
+
+## Aenderungen
+
+**0.3.0** (Durchsicht aller Bausteine)
+- `geo`: Rueckweg UTM nach Grad wird nachgebessert, jetzt auf Millimeter genau statt bis 6 m am Rand; unmoegliche oder vertauschte Werte ergeben `null`; leere Eingaben ("") erfinden keinen Punkt am Aequator mehr; `himmelsrichtung(NaN)` ergibt "".
+- `zahlen`: fehlende Werte ergeben "–" statt "0,0" oder "NaN"; kein "-0,0" mehr.
+- `export`: Leerzeichen am Zellrand bleiben erhalten; NaN/Unendlich werden leere Zellen; Wahrheitswerte und Datumsangaben richtig; Zellen auf Excels Hoechstlaenge gekuerzt; Blattnamen ohne Apostroph am Rand; CSV quotet auch "\r"; Download wird erst nach 10 s freigegeben (Safari brach sonst ab).

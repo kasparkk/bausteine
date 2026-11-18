@@ -45,3 +45,39 @@ test("Paare als Text", () => {
   assert.equal(gradPaar(52.5, 13.25), "52.500000, 13.250000");
   assert.equal(utmPaar(null, 13), "");
 });
+
+test("Raender des Bereichs: pyproj-Abweichung unter 0,5 m, Hin und zurueck exakt", () => {
+  const rand = [
+    [47, 3, -411804.96, 5275495.42],
+    [55, 27, 1265669.98, 6160873.07],
+    [50, 6, -144535.63, 5577555.96],
+  ];
+  for (const [b, l, x, y] of rand) {
+    const r = nachUtm33(b, l);
+    assert.ok(Math.hypot(r.x - x, r.y - y) < 0.5, `${b}/${l}`);
+    const z = ausUtm33(r.x, r.y);
+    assert.ok(entfernung(b, l, z.breite, z.laenge) < 0.05, `zurueck ${b}/${l}`);
+  }
+  assert.ok(Math.abs(nachUtm33(52.5, 15).x - 500000) < 0.01, "Mittelmeridian bei x = 500000");
+  assert.equal(nachUtm33(52, 2.9), null);
+});
+
+test("ausUtm33 lehnt unmoegliche Werte ab", () => {
+  assert.equal(ausUtm33(-600000, 5800000), null);
+  assert.equal(ausUtm33(400000, -1), null);
+  assert.equal(ausUtm33(5800000, 400000), null, "vertauschte Werte");
+});
+
+test("leere Eingaben erfinden keinen Punkt", () => {
+  assert.equal(utmPaar("", ""), "");
+  assert.equal(gradPaar("", 13), "");
+  assert.equal(gradPaar(undefined, 13), "");
+  assert.equal(gradPaar("52.5", "13.25"), "52.500000, 13.250000");
+});
+
+test("himmelsrichtung ohne Zahl", () => {
+  assert.equal(himmelsrichtung(NaN), "");
+  assert.equal(himmelsrichtung(-90), "W");
+  assert.equal(himmelsrichtung(337.4), "NW");
+  assert.equal(himmelsrichtung(337.6), "N");
+});

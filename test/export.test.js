@@ -63,3 +63,29 @@ test("weitergeben: Teilen-Menue und Abbruch", async () => {
   globalThis.navigator.share = async () => { const e = new Error("x"); e.name = "AbortError"; throw e; };
   assert.equal(await weitergeben(new Blob(["x"]), "a.csv", "T"), "abgebrochen");
 });
+
+test("Sonderfaelle in Excel-Zellen", async () => {
+  const lang = "&".repeat(40000);
+  const blob = baueXlsx([[NaN, Infinity, true, false, "  rand  ", new Date("2026-11-18T10:00:00Z"), lang, "a\u0001b"]]);
+  const pfad = await alsDatei(blob);
+  execFileSync("unzip", ["-tq", pfad]);
+  const blatt = execFileSync("unzip", ["-p", pfad, "xl/worksheets/sheet1.xml"]).toString();
+  assert.ok(!blatt.includes("NaN") && !blatt.includes("Infinity"));
+  assert.ok(blatt.includes('t="b"><v>1</v>') && blatt.includes('t="b"><v>0</v>'));
+  assert.ok(blatt.includes('xml:space="preserve">  rand  <'));
+  assert.ok(blatt.includes("2026-11-18T10:00:00.000Z"));
+  assert.ok(blatt.includes("ab") && !blatt.includes("\u0001"));
+  const zelle = blatt.match(/(&amp;)+/)[0];
+  assert.equal(zelle.length / 5, 32767, "auf 32767 Zeichen gekuerzt, ohne Maskierung zu zerschneiden");
+});
+
+test("Blattname mit Apostroph am Rand", async () => {
+  const pfad = await alsDatei(baueXlsxMehrblatt([{ name: "'Ergebnis'", zeilen: [[1]] }, { name: "'''", zeilen: [[2]] }]));
+  const wb = execFileSync("unzip", ["-p", pfad, "xl/workbook.xml"]).toString();
+  assert.ok(wb.includes('name="Ergebnis"') && wb.includes('name="Tabelle2"'));
+});
+
+test("CSV: Zeilenumbruch, NaN und Datum", () => {
+  const csv = baueCsv([["a\rb", NaN, new Date("2026-01-02T00:00:00Z")]]);
+  assert.equal(csv.slice(1), '"a\rb";;2026-01-02T00:00:00.000Z');
+});
