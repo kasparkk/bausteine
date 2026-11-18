@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { alsZahl } from "../zahlen.js";
-import { nachUtm33, ausUtm33, entfernung, peilung, himmelsrichtung, utmPaar, gradPaar } from "../geo.js";
+import { nachUtm, ausUtm, utmZone, nachUtm33, ausUtm33, entfernung, peilung, himmelsrichtung, utmPaar, gradPaar } from "../geo.js";
 
 // Referenzwerte aus pyproj (EPSG:4326 -> EPSG:25833)
 const referenz = [
@@ -149,4 +149,60 @@ test("fehlende Werte: keine Entfernung, keine Peilung", () => {
   assert.equal(himmelsrichtung("90"), "O");
   assert.equal(gradPaar(" ", " "), "");
   assert.equal(utmPaar(" ", 13), "");
+});
+
+// Orte auf allen Kontinenten, Referenz aus pyproj (WGS84 / UTM, EPSG:326xx bzw. 327xx)
+const WELT = [
+  ["Minsk", 53.9, 27.56, 35, true, 536795.485, 5972540.999],
+  ["Sydney", -33.87, 151.21, 56, false, 334435.706, 6250816.398],
+  ["Bergen", 60.39, 5.32, 32, true, 297230.220, 6700510.175],
+  ["Longyearbyen", 78.22, 15.65, 33, true, 514813.527, 8683004.153],
+  ["Quito", -0.18, -78.47, 17, false, 781616.424, 9980085.048],
+  ["Anchorage", 61.22, -149.9, 6, true, 344272.700, 6790747.648],
+  ["Kapstadt", -33.92, 18.42, 34, false, 261488.826, 6243716.333],
+  ["Fidschi", -17.7, 178.0, 60, false, 606044.604, 8042723.405],
+  ["Samoa", -13.8, -172.1, 2, false, 381101.614, 8474120.246],
+  ["Feuerland", -54.8, -68.3, 19, false, 545000.053, 3927239.381],
+  ["Reykjavik", 64.15, -21.94, 27, true, 454270.465, 7114066.846],
+  ["Singapur", 1.29, 103.85, 48, true, 372057.368, 142612.911],
+  ["Antarktis", -79.9, 166.7, 58, false, 533277.242, 1129089.613],
+  ["Nordgrenze", 83.9, -40.0, 24, true, 488136.731, 9317033.097],
+];
+
+test("weltweit: amtliche Zone, Hin- und Rueckweg gegen pyproj unter 1 cm", () => {
+  for (const [ort, b, l, zone, nord, x, y] of WELT) {
+    assert.equal(utmZone(b, l), zone, `Zone ${ort}`);
+    const r = nachUtm(b, l);
+    assert.equal(r.zone, zone, ort);
+    assert.equal(r.nord, nord, ort);
+    assert.ok(Math.hypot(r.x - x, r.y - y) < 0.01, `hin ${ort}`);
+    const z = ausUtm(x, y, zone, nord);
+    assert.ok(entfernung(b, l, z.breite, z.laenge) < 0.01, `zurueck ${ort}`);
+  }
+});
+
+test("Rueckweg passt weltweit zum Hinweg, auch ueber die Datumsgrenze", () => {
+  for (let b = -80; b <= 84; b += 9.1) for (let l = -180; l < 180; l += 13.7) {
+    const r = nachUtm(b, l);
+    const z = ausUtm(r.x, r.y, r.zone, r.nord);
+    assert.ok(z && entfernung(b, l, z.breite, z.laenge) < 0.01, `${b}/${l}`);
+  }
+});
+
+test("erzwungene Zone und Grenzen", () => {
+  assert.equal(nachUtm(52.5, 13.4).zone, 33);
+  assert.equal(nachUtm(50, 8).zone, 32, "Westdeutschland");
+  assert.equal(nachUtm(50, 8, 33).zone, 33, "Maske will Zone 33");
+  assert.equal(nachUtm(50, 30, 33), null, "mehr als 12 Grad vom Mittelmeridian");
+  assert.equal(nachUtm(85, 10), null, "Polkappe");
+  assert.equal(nachUtm(-81, 10), null, "Polkappe");
+  assert.equal(nachUtm(50, 8, 61), null, "keine Zone 61");
+  assert.equal(utmZone(null, 8), null);
+  assert.equal(ausUtm(500000, 5000000, 0), null);
+});
+
+test("utmPaar mit Zone", () => {
+  assert.equal(utmPaar(52.5163, 13.3777), "389917.83, 5819701.92");
+  assert.equal(utmPaar(53.9, 27.56), "", "Minsk liegt fuer Zone 33 zu weit oestlich");
+  assert.ok(utmPaar(53.9, 27.56, "auto").startsWith("536795"));
 });

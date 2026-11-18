@@ -1,38 +1,38 @@
-/* Baustein geo: Koordinaten fuer Feld-Apps.
+/* Baustein geo: Koordinaten fuer Feld-Apps, weltweit.
    Herkunft: verj-ngungsaufnahme2/src/utm33.js + koordinaten.js
    (identisch auch in Monitoring-App-f-r-willi).
 
-   Umrechnung WGS84 (das, was das Handy liefert) nach ETRS89 / UTM Zone 33N,
-   EPSG:25833 - das Koordinatensystem der Aufnahmemaske.
+   Umrechnung zwischen Laenge/Breite (was das Handy liefert) und UTM in jeder
+   der 60 Zonen, Nord- und Suedhalbkugel. nachUtm33/ausUtm33 sind die
+   Kurzform fuer ETRS89 / UTM 33N (EPSG:25833), das Koordinatensystem der
+   Aufnahmemasken in Brandenburg.
 
-   Warum ueberhaupt: Die Excel-Maske traegt X- und Y-Koordinate in EPSG:25833
-   ein, das Handy kennt aber nur Laenge und Breite. Damit die exportierten
-   Punkte ohne Nacharbeit in QGIS oder in die vorhandenen Datenbestaende
-   passen, rechnet die App beides mit und schreibt beides in den Export.
-
-   ETRS89 und WGS84 unterscheiden sich in Mitteleuropa um wenige Zentimeter,
-   weil ETRS89 mit der eurasischen Platte mitwandert. Gegenueber der
-   GNSS-Genauigkeit eines Handys (im Bestand eher 5-15 m) faellt das nicht
-   ins Gewicht; die Umrechnung behandelt beide Bezugssysteme daher als
-   gleich. Fuer zentimetergenaue Arbeit waere ein echter Datumsuebergang
-   noetig.
+   Bezugssystem: Gerechnet wird auf dem GRS80-Ellipsoid ohne Datumsuebergang.
+   Handy-Koordinaten (WGS84) und ETRS89 liegen in Europa inzwischen rund
+   0,9 m auseinander, weil ETRS89 mit der eurasischen Platte mitwandert
+   (gut 2,5 cm im Jahr seit 1989; Groessenordnung aus dem Gedaechtnis, nicht
+   nachgemessen). Neben der GNSS-Genauigkeit eines Handys im Bestand (5-15 m)
+   faellt das nicht ins Gewicht; fuer Vermessungsarbeit waere ein echter
+   Datumsuebergang noetig.
 
    Gerechnet wird die uebliche Reihenentwicklung der transversalen
-   Mercator-Abbildung (Snyder, Map Projections - A Working Manual) auf dem
-   GRS80-Ellipsoid.
+   Mercator-Abbildung (Snyder, Map Projections - A Working Manual).
 
-   Genauigkeit gegen pyproj: in Brandenburg und ueberall in 47-55 Grad Nord,
-   12-18 Grad Ost unter 1 cm (meist nur die Rundung auf cm); bei 47-55 Grad
-   Nord am Rand des Bereichs (3 bzw. 27 Grad Ost) bis 40 cm; nahe dem
-   Aequator am Rand bis 1,5 m. Nur Nordhalbkugel. */
+   Genauigkeit gegen pyproj: in der eigenen Zone (bis 3 Grad vom
+   Mittelmeridian) ueberall unter 1 cm, meist nur die Rundung auf cm. Wird
+   eine fremde Zone erzwungen, waechst der Fehler mit dem Abstand: bei 9 Grad
+   einige cm, bei 12 Grad (dem erlaubten Hoechstabstand) bis 1,5 m.
+   Nicht abgedeckt: die Polkappen noerdlich von 84 und suedlich von 80 Grad
+   (dort gilt UPS statt UTM). */
 
 import { alsZahl } from "./zahlen.js";
 
 const a = 6378137.0; // grosse Halbachse GRS80
 const f = 1 / 298.257222101; // Abplattung GRS80
 const k0 = 0.9996; // Massstabsfaktor der UTM-Abbildung
-const LON0 = (15 * Math.PI) / 180; // Mittelmeridian der Zone 33
 const FE = 500000; // Ostwert des Mittelmeridians
+const FN_SUED = 10000000; // Nordwert-Zuschlag auf der Suedhalbkugel
+const MAX_ABSTAND = 12; // hoechstens so viele Grad vom Mittelmeridian
 
 const e2 = f * (2 - f);
 const ep2 = e2 / (1 - e2);
@@ -40,6 +40,10 @@ const ep2 = e2 / (1 - e2);
 const bogen = (grad) => (grad * Math.PI) / 180;
 const grad = (bogenmass) => (bogenmass * 180) / Math.PI;
 const aufCm = (meter) => Math.round(meter * 100) / 100;
+const mittelmeridian = (zone) => zone * 6 - 183;
+// Laengenunterschied auf -180..180 Grad bringen (Datumsgrenze bei Zone 1/60)
+const laengenAbstand = (laenge, zone) => ((((laenge - mittelmeridian(zone)) % 360) + 540) % 360) - 180;
+const istZone = (zone) => Number.isInteger(zone) && zone >= 1 && zone <= 60;
 
 /* Meridianbogenlaenge vom Aequator bis zur Breite phi. */
 function meridianbogen(phi) {
@@ -52,22 +56,41 @@ function meridianbogen(phi) {
   );
 }
 
-/* Laenge/Breite in Grad -> { x, y } in Metern (EPSG:25833).
-   Ausserhalb eines sinnvollen Bereichs um die Zone 33 wird null geliefert:
-   eine Zahl auszugeben, die dort niemand mehr verwenden kann, waere
-   irrefuehrender als gar keine. */
-export function nachUtm33(breiteGrad, laengeGrad) {
-  if (!Number.isFinite(breiteGrad) || !Number.isFinite(laengeGrad)) return null;
-  if (breiteGrad < 0 || breiteGrad > 84) return null;
-  if (laengeGrad < 3 || laengeGrad > 27) return null;
-  const { x, y } = vorwaerts(breiteGrad, laengeGrad);
-  return { x: aufCm(x), y: aufCm(y) };
+/* Die UTM-Zone, in der ein Punkt amtlich liegt - mit den beiden Ausnahmen
+   des UTM-Systems: Suedwestnorwegen gehoert zu Zone 32, Spitzbergen ist in
+   die Zonen 31, 33, 35 und 37 aufgeteilt. */
+export function utmZone(breite, laenge) {
+  const b = alsZahl(breite);
+  const l = alsZahl(laenge);
+  if (!Number.isFinite(b) || !Number.isFinite(l)) return null;
+  const lon = ((((l + 180) % 360) + 360) % 360) - 180;
+  if (b >= 56 && b < 64 && lon >= 3 && lon < 12) return 32;
+  if (b >= 72 && b < 84 && lon >= 0 && lon < 42) {
+    return lon < 9 ? 31 : lon < 21 ? 33 : lon < 33 ? 35 : 37;
+  }
+  return Math.min(60, Math.floor((lon + 180) / 6) + 1);
 }
 
-/* Die eigentliche Rechnung, ungerundet und ohne Pruefung. */
-function vorwaerts(breiteGrad, laengeGrad) {
+/* Laenge/Breite in Grad -> { x, y, zone, nord } in Metern.
+   Ohne Zonenangabe die amtliche Zone des Punktes; mit Zonenangabe diese
+   (z. B. fuer eine Maske, die alles in Zone 33 will), solange der Punkt
+   hoechstens 12 Grad von deren Mittelmeridian liegt. Ausserhalb wird null
+   geliefert: eine Zahl, die dort niemand mehr verwenden kann, waere
+   irrefuehrender als gar keine. */
+export function nachUtm(breite, laenge, zone = utmZone(breite, laenge)) {
+  if (!Number.isFinite(breite) || !Number.isFinite(laenge) || !istZone(zone)) return null;
+  if (breite < -80 || breite > 84) return null;
+  const dl = laengenAbstand(laenge, zone);
+  if (Math.abs(dl) > MAX_ABSTAND) return null;
+  const nord = breite >= 0;
+  const { x, y } = vorwaerts(breite, dl);
+  return { x: aufCm(x), y: aufCm(nord ? y : y + FN_SUED), zone, nord };
+}
+
+/* Die eigentliche Rechnung, ungerundet und ohne Pruefung; dl ist der
+   Abstand zum Mittelmeridian in Grad. Auf der Suedhalbkugel ist y negativ. */
+function vorwaerts(breiteGrad, dl) {
   const phi = bogen(breiteGrad);
-  const dl = bogen(laengeGrad) - LON0;
 
   const sinPhi = Math.sin(phi);
   const cosPhi = Math.cos(phi);
@@ -76,7 +99,7 @@ function vorwaerts(breiteGrad, laengeGrad) {
   const N = a / Math.sqrt(1 - e2 * sinPhi * sinPhi);
   const T = tanPhi * tanPhi;
   const C = ep2 * cosPhi * cosPhi;
-  const A = dl * cosPhi;
+  const A = bogen(dl) * cosPhi;
   const M = meridianbogen(phi);
 
   const x =
@@ -99,47 +122,59 @@ function vorwaerts(breiteGrad, laengeGrad) {
   return { x, y };
 }
 
-/* Rueckweg: EPSG:25833 -> Laenge/Breite in Grad. Wird gebraucht, wenn
+/* Rueckweg: UTM -> Laenge/Breite in Grad. Wird gebraucht, wenn
    Soll-Koordinaten als Rechts-/Hochwert eingegeben werden, die Karte und die
-   Entfernungsanzeige aber Laenge und Breite brauchen.
+   Entfernungsanzeige aber Laenge und Breite brauchen. nord = false fuer die
+   Suedhalbkugel.
 
    Statt einer eigenen Reihe fuer den Rueckweg wird der Hinweg umgekehrt:
    grob schaetzen, dann Breite und Laenge so lange verschieben (Newton), bis
    der Hinweg x und y trifft; nach hoechstens drei Schritten auf Bruchteile
-   eines Millimeters. Landet das Ergebnis ausserhalb des Bereichs von
-   nachUtm33 (z. B. Rechtswert mit einer Ziffer zu viel) oder trifft es
-   nicht, kommt null - lieber kein Punkt als ein Punkt in Weissrussland. */
-export function ausUtm33(x, y) {
-  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-  // Spanne passend zu nachUtm33 (3-27 Grad Ost ergeben am Aequator x von
-  // etwa -0,85 bis 1,85 Mio.); was ausserhalb liegt, ist ein Tippfehler
-  // oder vertauscht.
-  if (x < -900000 || x > 1900000 || y < 0 || y > 9400000) return null;
+   eines Millimeters. Landet das Ergebnis ausserhalb des Bereichs, den
+   nachUtm fuer diese Zone annimmt (z. B. Rechtswert mit einer Ziffer zu
+   viel), oder trifft es nicht, kommt null. */
+export function ausUtm(x, y, zone, nord = true) {
+  if (!Number.isFinite(x) || !Number.isFinite(y) || !istZone(zone)) return null;
+  // Grobe Spanne (12 Grad vom Mittelmeridian ergeben am Aequator x von etwa
+  // -0,85 bis 1,85 Mio.); was ausserhalb liegt, ist Tippfehler oder vertauscht.
+  if (x < -900000 || x > 1900000 || y < 0 || y > FN_SUED) return null;
+  const yN = nord ? y : y - FN_SUED; // Abstand vom Aequator, im Sueden negativ
 
-  let breite = y / 111132; // Meter je Breitengrad
+  let breite = yN / 111132; // Meter je Breitengrad
+  let dl = (x - FE) / (111320 * Math.cos(bogen(breite)));
   let rest = Infinity;
-  let laenge = 15 + (x - FE) / (111320 * Math.cos(bogen(breite)));
   const h = 1e-6;
   for (let schritt = 0; schritt < 10; schritt++) {
-    const p = vorwaerts(breite, laenge);
+    const p = vorwaerts(breite, dl);
     const dx = p.x - x;
-    const dy = p.y - y;
+    const dy = p.y - yN;
     rest = Math.hypot(dx, dy);
     if (rest < 1e-4) break;
-    const pb = vorwaerts(breite + h, laenge);
-    const pl = vorwaerts(breite, laenge + h);
+    const pb = vorwaerts(breite + h, dl);
+    const pl = vorwaerts(breite, dl + h);
     const a11 = (pb.x - p.x) / h, a12 = (pl.x - p.x) / h;
     const a21 = (pb.y - p.y) / h, a22 = (pl.y - p.y) / h;
     const det = a11 * a22 - a12 * a21;
     breite -= (a22 * dx - a12 * dy) / det;
-    laenge -= (a11 * dy - a21 * dx) / det;
+    dl -= (a11 * dy - a21 * dx) / det;
   }
-  // Bereich wie bei nachUtm33, mit Spielraum fuer Punkte genau auf dem Rand.
+  // Bereich wie bei nachUtm, mit Spielraum fuer Punkte genau auf dem Rand.
   const e = 1e-6;
-  const imBereich = breite > -e && breite < 84 + e && laenge > 3 - e && laenge < 27 + e;
+  const imBereich = (nord ? breite > -e && breite < 84 + e : breite < e && breite > -80 - e) &&
+    Math.abs(dl) < MAX_ABSTAND + e;
   if (rest > 1e-3 || !imBereich) return null;
+  const laenge = ((((mittelmeridian(zone) + dl + 180) % 360) + 360) % 360) - 180;
   return { breite, laenge };
 }
+
+/* Kurzform fuer ETRS89 / UTM 33N (EPSG:25833), wie bisher: { x, y } bzw.
+   { breite, laenge }. Nur Nordhalbkugel, 3-27 Grad Ost. */
+export function nachUtm33(breite, laenge) {
+  const r = breite >= 0 ? nachUtm(breite, laenge, 33) : null;
+  return r && { x: r.x, y: r.y };
+}
+
+export const ausUtm33 = (x, y) => ausUtm(x, y, 33, true);
 
 /* Entfernung zweier Punkte in Metern (Haversine, Erde als Kugel).
    Auf den Entfernungen einer Untersuchungsflaeche liegt der Fehler
@@ -178,11 +213,14 @@ export const himmelsrichtung = (eingabe) => {
 };
 
 /* Koordinatenpaare am Stueck, wie sie in den Ausgaben stehen sollen.
-   UTM: Rechts- und Hochwert fuer die Aufnahmemaske; Grad: Breite, Laenge
-   fuer Kartenprogramme. Punkt als Dezimaltrenner, weil das Komma die beiden
+   UTM: Rechts- und Hochwert fuer die Aufnahmemaske (Standard Zone 33; mit
+   zone = "auto" die amtliche Zone des Punktes); Grad: Breite, Laenge fuer
+   Kartenprogramme. Punkt als Dezimaltrenner, weil das Komma die beiden
    Werte trennt. Leere Eingaben ergeben "" (siehe alsZahl). */
-export const utmPaar = (breite, laenge) => {
-  const utm = nachUtm33(alsZahl(breite), alsZahl(laenge));
+export const utmPaar = (breite, laenge, zone = 33) => {
+  const b = alsZahl(breite);
+  const l = alsZahl(laenge);
+  const utm = zone === "auto" ? nachUtm(b, l) : zone === 33 ? nachUtm33(b, l) : nachUtm(b, l, zone);
   return utm ? `${utm.x.toFixed(2)}, ${utm.y.toFixed(2)}` : "";
 };
 

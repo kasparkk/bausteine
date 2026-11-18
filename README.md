@@ -6,7 +6,7 @@ kopiert.
 
 | Baustein | Inhalt | Herkunft |
 |---|---|---|
-| `geo` | WGS84 <-> UTM 33 (EPSG:25833), Entfernung, Peilung, Himmelsrichtung, Koordinaten als Text | verj-ngungsaufnahme2, Monitoring-App |
+| `geo` | Laenge/Breite <-> UTM, weltweit in allen 60 Zonen (amtliche Zone automatisch, auch Norwegen/Spitzbergen), Kurzform fuer UTM 33 (EPSG:25833); Entfernung, Peilung, Himmelsrichtung, Koordinaten als Text | verj-ngungsaufnahme2, Monitoring-App |
 | `zahlen` | Zahlen mit fester Nachkommastellenzahl (`nk`) | 7 Kopien in beiden Apps |
 | `export` | Excel (.xlsx, auch mehrere Blaetter), CSV fuers deutsche Excel, Datei teilen oder herunterladen | xlsx.js, monitoring/export.js, 5 Kopien von "weitergeben" |
 
@@ -29,6 +29,8 @@ Einbinden in eine App: `npm install github:kasparkk/bausteine`
 `speicher`, `pwa`; in wald-lidar: `laz`, `baumerkennung`.
 
 ## Aenderungen
+
+**0.5.0** `geo` weltweit: `nachUtm(breite, laenge, zone?)`, `ausUtm(x, y, zone, nord)`, `utmZone(breite, laenge)`; Nord- und Suedhalbkugel, Datumsgrenze, Ausnahmen Norwegen/Spitzbergen. Gegen pyproj an ~15.000 Punkten weltweit: hin hoechstens 7 mm (Rundung auf cm), zurueck unter 1 mm. `nachUtm33`/`ausUtm33` unveraendert. Hinweis zum Abstand WGS84/ETRS89 berichtigt (rund 0,9 m statt "wenige Zentimeter").
 
 **0.4.0** (unabhaengige Durchsicht, 33 Tests)
 - `geo`: `ausUtm33` liefert `null` statt Punkten ausserhalb des Bereichs (z. B. Rechtswert mit einer Ziffer zu viel); `entfernung`, `peilung` und `himmelsrichtung` geben bei fehlenden Werten NaN bzw. "" statt der Entfernung zum Aequator; Suedhalbkugel wird abgelehnt; Genauigkeitsangabe nachgemessen.
