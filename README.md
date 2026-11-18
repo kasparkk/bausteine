@@ -21,7 +21,7 @@ Einbinden in eine App: `npm install github:kasparkk/bausteine`
 
 ## Regeln
 
-1. Ein Baustein kommt erst rein, wenn seine Tests laufen (`npm test`).
+1. Ein Baustein kommt erst rein, wenn seine Tests laufen (`npm test`). GitHub prueft das bei jeder Aenderung selbst (Reiter "Actions"; rotes Kreuz = nicht in die Apps uebernehmen).
 2. Lieber allgemein als passgenau: Parameter statt fester Werte.
 3. Vor einem neuen Baustein schauen, ob ein vorhandener reicht.
 

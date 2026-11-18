@@ -1,0 +1,20 @@
+# Laesst bei jeder Aenderung alle Tests laufen. Schlaegt einer fehl,
+# zeigt GitHub ein rotes Kreuz am Commit - dann gehoert die Aenderung
+# nicht in die Apps.
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # Die Excel-Tests pruefen die Dateien mit unzip und xmllint.
+      - run: sudo apt-get install -y --no-install-recommends unzip libxml2-utils
+      - run: npm test
