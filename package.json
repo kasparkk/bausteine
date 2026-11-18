@@ -1,6 +1,6 @@
 {
   "name": "bausteine",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Getestete Bausteine fuer meine Apps",
   "type": "module",
   "main": "index.js",
@@ -9,7 +9,8 @@
     "./geo": "./geo.js",
     "./zahlen": "./zahlen.js",
     "./export": "./export.js",
-    "./gps": "./gps.js"
+    "./gps": "./gps.js",
+    "./kamera": "./kamera.js"
   },
   "scripts": {
     "test": "node --test"

@@ -8,6 +8,7 @@ kopiert.
 |---|---|---|
 | `geo` | Laenge/Breite <-> UTM, weltweit in allen 60 Zonen (amtliche Zone automatisch, auch Norwegen/Spitzbergen), Kurzform fuer UTM 33 (EPSG:25833); Entfernung, Peilung, Himmelsrichtung, Koordinaten als Text | verj-ngungsaufnahme2, Monitoring-App |
 | `zahlen` | Zahlen mit fester Nachkommastellenzahl (`nk`), Eingaben mit Komma lesen (`leseZahl`), `alsZahl` | 7 + 2 Kopien |
+| `kamera` | Rueckkamera als Live-Bild in ein `<video>`: begrenzte Groesse, sauberes Ausschalten, Neustart nach dem Hintergrund (Android) | Sucher im Hoehenmesser |
 | `gps` | Standort einmal abfragen (`ortung`), frisch, hohe Genauigkeit, 12 s | 3 Kopien in verj-ngungsaufnahme2 |
 | `export` | Excel (.xlsx, auch mehrere Blaetter), CSV fuers deutsche Excel, Datei teilen oder herunterladen | xlsx.js, monitoring/export.js, 5 Kopien von "weitergeben" |
 
@@ -30,6 +31,8 @@ Einbinden in eine App: `npm install github:kasparkk/bausteine`
 `speicher`, `pwa`; in wald-lidar: `laz`, `baumerkennung`.
 
 ## Aenderungen
+
+**0.7.0** Neu: `kamera()`.
 
 **0.6.0** Neu: `gps.ortung()` und `zahlen.leseZahl()`.
 
