@@ -8,6 +8,7 @@ kopiert.
 |---|---|---|
 | `geo` | WGS84 <-> UTM 33 (EPSG:25833), Entfernung, Peilung, Himmelsrichtung, Koordinaten als Text | verj-ngungsaufnahme2, Monitoring-App |
 | `zahlen` | Zahlen mit fester Nachkommastellenzahl (`nk`) | 7 Kopien in beiden Apps |
+| `export` | Excel (.xlsx, auch mehrere Blaetter), CSV fuers deutsche Excel, Datei teilen oder herunterladen | xlsx.js, monitoring/export.js, 5 Kopien von "weitergeben" |
 
 ## Benutzen
 
@@ -25,4 +26,4 @@ Einbinden in eine App: `npm install github:kasparkk/bausteine`
 
 ## Als Naechstes
 
-`export` (CSV/Excel), `speicher`, `pwa`; in wald-lidar: `laz`, `baumerkennung`.
+`speicher`, `pwa`; in wald-lidar: `laz`, `baumerkennung`.
